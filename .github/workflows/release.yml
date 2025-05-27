@@ -96,9 +96,6 @@ jobs:
       with:
         pattern: binaries-*
         merge-multiple: true
-      with:
-        name: binaries
-        path: ./
 
     - name: Generate release notes
       id: release_notes
@@ -166,7 +163,7 @@ jobs:
         EOF
 
     - name: Create Release
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v2
       with:
         name: Release ${{ steps.release_notes.outputs.tag_name }}
         body_path: release_notes.md
