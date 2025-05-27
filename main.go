@@ -634,7 +634,7 @@ func showConfig() error {
 	if config.DefaultToken != "" {
 		fmt.Printf("  Default Token: [configured]\n")
 	} else {
-		fmt.Printf("  Default Token: [not set]\n")
+		fmt.Printf("  Default T0ken: [not set]\n")
 	}
 	
 	return nil
