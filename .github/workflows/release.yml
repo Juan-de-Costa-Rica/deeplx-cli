@@ -77,9 +77,7 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: binaries-${{ matrix.goos }}-${{ matrix.goarch }}
-        path: |
-          translate-*
-          *.sha256
+        path: translate-${{ matrix.goos }}-${{ matrix.goarch }}*
 
   release:
     name: Release
