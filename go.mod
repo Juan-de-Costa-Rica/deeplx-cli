@@ -1,4 +1,4 @@
-module github.com/yourusername/deeplx-cli
+module github.com/juan-de-costa-rica/deeplx-cli
 
 go 1.21
 
