@@ -89,11 +89,47 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
 
-    - name: Download artifacts
+    # Download each artifact separately to avoid conflicts
+    - name: Download Linux AMD64
       uses: actions/download-artifact@v4
       with:
-        pattern: binaries-*
-        merge-multiple: true
+        name: binaries-linux-amd64
+        path: ./
+
+    - name: Download Linux ARM64
+      uses: actions/download-artifact@v4
+      with:
+        name: binaries-linux-arm64
+        path: ./
+
+    - name: Download Darwin AMD64
+      uses: actions/download-artifact@v4
+      with:
+        name: binaries-darwin-amd64
+        path: ./
+
+    - name: Download Darwin ARM64
+      uses: actions/download-artifact@v4
+      with:
+        name: binaries-darwin-arm64
+        path: ./
+
+    - name: Download Windows AMD64
+      uses: actions/download-artifact@v4
+      with:
+        name: binaries-windows-amd64
+        path: ./
+
+    - name: Download Windows ARM64
+      uses: actions/download-artifact@v4
+      with:
+        name: binaries-windows-arm64
+        path: ./
+
+    - name: List files
+      run: |
+        echo "Files in current directory:"
+        ls -la translate-* || echo "No translate files found"
 
     - name: Generate release notes
       id: release_notes
@@ -109,13 +145,12 @@ jobs:
         
         #### Quick Install (Linux/macOS)
         \`\`\`bash
+        # One-liner install
+        curl -sSL https://raw.githubusercontent.com/juan-de-costa-rica/deeplx-cli/main/install.sh | bash
+        
+        # Or manual install:
         # Linux AMD64
         curl -L -o translate https://github.com/${{ github.repository }}/releases/download/$TAG_NAME/translate-linux-amd64
-        chmod +x translate
-        sudo mv translate /usr/local/bin/
-        
-        # macOS AMD64 (Intel)
-        curl -L -o translate https://github.com/${{ github.repository }}/releases/download/$TAG_NAME/translate-darwin-amd64
         chmod +x translate
         sudo mv translate /usr/local/bin/
         
@@ -148,7 +183,7 @@ jobs:
         
         ### What's New
         - Fixed authentication token handling
-        - Added configuration management
+        - Added configuration management  
         - Improved error messages
         - Added debug mode
         - Better command-line interface
@@ -165,9 +200,7 @@ jobs:
       with:
         name: Release ${{ steps.release_notes.outputs.tag_name }}
         body_path: release_notes.md
-        files: |
-          translate-*
-          *.sha256
+        files: translate-*
         draft: false
         prerelease: false
       env:
