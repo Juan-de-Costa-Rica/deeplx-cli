@@ -1,0 +1,4 @@
+# Add to .gitignore
+translate
+translate-*
+build/
