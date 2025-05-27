@@ -1,108 +1,204 @@
 #!/bin/bash
-
-# install.sh - Install script for DeepLX CLI
-# This script installs both the DeepLX server and the CLI client
+# Simple installer for DeepLX CLI
+# Usage: curl -sSL https://raw.githubusercontent.com/juan-de-costa-rica/deeplx-cli/main/install.sh | bash
 
 set -e
 
-# Colors for output
+# Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
-NC='\033[0m' # No Color
+BLUE='\033[0;34m'
+BOLD='\033[1m'
+NC='\033[0m'
 
-# Function to print messages
-print_message() {
-  echo -e "${GREEN}[+]${NC} $1"
+# GitHub repository
+REPO="juan-de-costa-rica/deeplx-cli"
+BINARY_NAME="translate"
+
+print_header() {
+    echo -e "${BLUE}${BOLD}"
+    echo "╔══════════════════════════════════════╗"
+    echo "║           DeepLX CLI Installer       ║"
+    echo "╚══════════════════════════════════════╝"
+    echo -e "${NC}"
 }
 
-print_warning() {
-  echo -e "${YELLOW}[!]${NC} $1"
+print_step() {
+    echo -e "${GREEN}▶${NC} ${BOLD}$1${NC}"
+}
+
+print_info() {
+    echo -e "  ${BLUE}ℹ${NC} $1"
+}
+
+print_success() {
+    echo -e "${GREEN}✓${NC} ${BOLD}$1${NC}"
 }
 
 print_error() {
-  echo -e "${RED}[x]${NC} $1"
+    echo -e "${RED}✗${NC} ${BOLD}Error:${NC} $1" >&2
 }
 
-# Check if Docker is installed
-check_docker() {
-  if ! command -v docker &> /dev/null; then
-    print_error "Docker is not installed. Please install Docker first."
-    echo "You can install Docker by following the instructions at:"
-    echo "https://docs.docker.com/get-docker/"
-    exit 1
-  fi
-  print_message "Docker is installed."
+# Detect architecture
+detect_arch() {
+    local arch
+    arch=$(uname -m)
+    case $arch in
+        x86_64) echo "amd64" ;;
+        aarch64|arm64) echo "arm64" ;;
+        *) 
+            print_error "Unsupported architecture: $arch"
+            echo "Supported: x86_64, aarch64/arm64"
+            exit 1
+            ;;
+    esac
 }
 
-# Start DeepLX server in Docker
-start_deeplx_server() {
-  print_message "Setting up DeepLX server..."
-  
-  # Check if container is already running
-  if docker ps | grep -q "deeplx"; then
-    print_message "DeepLX server is already running."
-  else
-    # Check if the container exists but is not running
-    if docker ps -a | grep -q "deeplx"; then
-      print_message "Starting existing DeepLX container..."
-      docker start deeplx
-    else
-      print_message "Creating and starting DeepLX container..."
-      docker run -d --name deeplx -p 1188:1188 ghcr.io/owo-network/deeplx:latest
+# Detect OS
+detect_os() {
+    local os
+    os=$(uname -s | tr '[:upper:]' '[:lower:]')
+    case $os in
+        linux) echo "linux" ;;
+        darwin) echo "darwin" ;;
+        *)
+            print_error "Unsupported OS: $os"
+            echo "Supported: Linux, macOS"
+            exit 1
+            ;;
+    esac
+}
+
+# Get latest release version
+get_latest_version() {
+    print_step "Getting latest version..."
+    
+    local version
+    version=$(curl -sSL "https://api.github.com/repos/$REPO/releases/latest" | grep '"tag_name":' | cut -d'"' -f4 2>/dev/null || echo "")
+    
+    if [ -z "$version" ]; then
+        print_error "Could not determine latest version"
+        exit 1
     fi
-  fi
-  
-  print_message "DeepLX server is running at http://localhost:1188"
+    
+    print_info "Latest version: $version"
+    echo "$version"
 }
 
-# Build and install the CLI
-install_cli() {
-  print_message "Building and installing DeepLX CLI..."
-  
-  # Check if Go is installed
-  if ! command -v go &> /dev/null; then
-    print_error "Go is not installed. Please install Go first."
-    echo "You can install Go by following the instructions at:"
-    echo "https://golang.org/doc/install"
-    exit 1
-  fi
-  
-  print_message "Building the CLI..."
-  go build -o translate
-  
-  print_message "Installing the CLI to /usr/local/bin/ (requires sudo)..."
-  sudo mv translate /usr/local/bin/
-  
-  print_message "CLI installation complete!"
+# Download and install binary
+install_binary() {
+    local version="$1"
+    local os="$2" 
+    local arch="$3"
+    
+    print_step "Installing DeepLX CLI..."
+    
+    # Create temp directory
+    local tmp_dir
+    tmp_dir=$(mktemp -d)
+    trap "rm -rf $tmp_dir" EXIT
+    
+    # Download URL
+    local binary_name="${BINARY_NAME}-${os}-${arch}"
+    if [ "$os" = "windows" ]; then
+        binary_name="${binary_name}.exe"
+    fi
+    
+    local download_url="https://github.com/$REPO/releases/download/$version/$binary_name"
+    print_info "Downloading from: $download_url"
+    
+    # Download binary
+    if ! curl -sSL "$download_url" -o "$tmp_dir/$BINARY_NAME"; then
+        print_error "Failed to download binary"
+        print_info "Check if the release exists at: https://github.com/$REPO/releases"
+        exit 1
+    fi
+    
+    # Make executable
+    chmod +x "$tmp_dir/$BINARY_NAME"
+    
+    # Install to system
+    local install_dir="/usr/local/bin"
+    if [ -w "$install_dir" ]; then
+        mv "$tmp_dir/$BINARY_NAME" "$install_dir/$BINARY_NAME"
+        print_success "Installed to $install_dir/$BINARY_NAME"
+    else
+        print_info "Installing to $install_dir (requires sudo)..."
+        sudo mv "$tmp_dir/$BINARY_NAME" "$install_dir/$BINARY_NAME"
+        print_success "Installed to $install_dir/$BINARY_NAME"
+    fi
 }
 
-# Main function
+# Verify installation
+verify_installation() {
+    print_step "Verifying installation..."
+    
+    if command -v "$BINARY_NAME" >/dev/null 2>&1; then
+        local version
+        version=$($BINARY_NAME --version 2>/dev/null || echo "unknown")
+        print_success "Installation successful! Version: $version"
+        return 0
+    else
+        print_error "Installation failed - binary not found in PATH"
+        return 1
+    fi
+}
+
+# Show usage instructions
+show_usage() {
+    echo
+    echo -e "${BOLD}🚀 Quick Start:${NC}"
+    echo
+    echo -e "${YELLOW}# Set up your DeepLX server token${NC}"
+    echo -e "export TOKEN=your_deeplx_server_token"
+    echo
+    echo -e "${YELLOW}# Translate text${NC}"
+    echo -e "translate \"Hello, world!\""
+    echo
+    echo -e "${YELLOW}# Translate to Spanish${NC}"
+    echo -e "translate -t es \"Hello, how are you?\""
+    echo
+    echo -e "${YELLOW}# Show alternatives${NC}"
+    echo -e "translate --alternatives \"Hello, world!\""
+    echo
+    echo -e "${YELLOW}# Configure defaults${NC}"
+    echo -e "translate config set --url http://localhost:1188 --token your_token"
+    echo
+    echo -e "${YELLOW}# Get help${NC}"
+    echo -e "translate --help"
+    echo
+    echo -e "${BOLD}📚 More info:${NC} https://github.com/$REPO"
+}
+
+# Main installation function
 main() {
-  print_message "Welcome to DeepLX CLI installer!"
-  
-  # Ask if user wants to install server
-  read -p "Do you want to install the DeepLX server using Docker? [y/N] " install_server
-  if [[ $install_server =~ ^[Yy]$ ]]; then
-    check_docker
-    start_deeplx_server
-  else
-    print_warning "Skipping DeepLX server installation."
-    print_warning "Make sure you have a DeepLX server running to use the CLI."
-  fi
-  
-  # Ask if user wants to install CLI
-  read -p "Do you want to build and install the DeepLX CLI? [Y/n] " install_cli_choice
-  if [[ $install_cli_choice =~ ^[Nn]$ ]]; then
-    print_warning "Skipping CLI installation."
-  else
-    install_cli
-  fi
-  
-  print_message "Installation complete!"
-  print_message "You can now use the 'translate' command to translate text."
-  print_message "Example: translate -t es \"Hello, how are you?\""
+    print_header
+    
+    # Check dependencies
+    if ! command -v curl >/dev/null 2>&1; then
+        print_error "curl is required but not installed"
+        exit 1
+    fi
+    
+    # Detect system
+    local os arch version
+    os=$(detect_os)
+    arch=$(detect_arch)
+    version=$(get_latest_version)
+    
+    print_info "System: $os-$arch"
+    
+    # Install
+    install_binary "$version" "$os" "$arch"
+    
+    # Verify
+    if verify_installation; then
+        show_usage
+    else
+        exit 1
+    fi
 }
 
-# Run the main function
-main
+# Run main function
+main "$@"
