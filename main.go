@@ -138,9 +138,240 @@ func main() {
 					},
 				},
 			},
+			{
+				Name:  "setup",
+				Usage: "Interactive setup for DeepLX CLI",
+				Action: func(c *cli.Context) error {
+					fmt.Println("🚀 DeepLX CLI Setup")
+					fmt.Println("==================")
+					fmt.Println()
+					
+					// Check if DeepLX is running locally
+					fmt.Print("Checking for local DeepLX server... ")
+					localURL := "http://localhost:1188"
+					if err := checkServerConnection(localURL, 5*time.Second); err == nil {
+						fmt.Println("✓ Found!")
+						
+						// Test if it requires authentication
+						_, err := translate(localURL, "test", "AUTO", "EN", "", 5*time.Second, false)
+						if err != nil && strings.Contains(err.Error(), "authentication") {
+							fmt.Println("\n⚠️  Server requires authentication")
+							fmt.Print("Enter your token (or press Enter to skip): ")
+							var token string
+							fmt.Scanln(&token)
+							
+							if token != "" {
+								// Test with token
+								_, err = translate(localURL, "test", "AUTO", "EN", token, 5*time.Second, false)
+								if err == nil {
+									// Save configuration
+									config := Config{
+										DefaultURL:   localURL,
+										DefaultToken: token,
+									}
+									if err := saveConfig(config); err == nil {
+										fmt.Println("\n✓ Configuration saved!")
+										fmt.Println("\nYou're all set! Try:")
+										fmt.Println(`  translate "Hello world"`)
+										return nil
+									}
+								} else {
+									fmt.Println("⚠️  Token verification failed:", err)
+								}
+							}
+						} else if err == nil {
+							// No authentication needed
+							config := Config{
+								DefaultURL: localURL,
+							}
+							if err := saveConfig(config); err == nil {
+								fmt.Println("\n✓ Configuration saved!")
+								fmt.Println("\nYou're all set! Try:")
+								fmt.Println(`  translate "Hello world"`)
+								return nil
+							}
+						}
+					} else {
+						fmt.Println("✗ Not found")
+					}
+					
+					// Offer to start DeepLX with Docker
+					fmt.Println("\n📦 No local DeepLX server found.")
+					fmt.Println("\nWould you like to:")
+					fmt.Println("1. Start DeepLX with Docker (recommended)")
+					fmt.Println("2. Use a remote DeepLX server")
+					fmt.Println("3. Exit and set up manually")
+					fmt.Print("\nChoice (1-3): ")
+					
+					var choice string
+					fmt.Scanln(&choice)
+					
+					switch choice {
+					case "1":
+						fmt.Println("\nTo start DeepLX with Docker, run:")
+						fmt.Println("\n  docker run -d -p 1188:1188 ghcr.io/owo-network/deeplx:latest")
+						fmt.Println("\nThen run 'translate setup' again.")
+						
+					case "2":
+						fmt.Print("\nEnter the DeepLX server URL: ")
+						var serverURL string
+						fmt.Scanln(&serverURL)
+						
+						if serverURL != "" {
+							// Test connection
+							fmt.Print("Testing connection... ")
+							if err := checkServerConnection(serverURL, 10*time.Second); err != nil {
+								fmt.Println("✗ Failed")
+								fmt.Println("Error:", err)
+								return nil
+							}
+							fmt.Println("✓ Connected")
+							
+							// Check if authentication is needed
+							fmt.Print("\nDoes this server require authentication? (y/N): ")
+							var needsAuth string
+							fmt.Scanln(&needsAuth)
+							
+							var token string
+							if strings.ToLower(needsAuth) == "y" {
+								fmt.Print("Enter your token: ")
+								fmt.Scanln(&token)
+							}
+							
+							// Test translation
+							fmt.Print("\nTesting translation... ")
+							result, err := translate(serverURL, "Hello", "AUTO", "EN", token, 10*time.Second, false)
+							if err != nil {
+								fmt.Println("✗ Failed")
+								fmt.Println("Error:", err)
+								return nil
+							}
+							fmt.Printf("✓ Success! Got: %s\n", result.Data)
+							
+							// Save configuration
+							config := Config{
+								DefaultURL:   serverURL,
+								DefaultToken: token,
+							}
+							if err := saveConfig(config); err != nil {
+								fmt.Println("\n⚠️  Failed to save config:", err)
+								return nil
+							}
+							
+							fmt.Println("\n✓ Configuration saved!")
+							fmt.Println("\nYou're all set! Try:")
+							fmt.Println(`  translate "Hello world"`)
+						}
+						
+					case "3":
+						fmt.Println("\nTo set up manually:")
+						fmt.Println("1. Start a DeepLX server")
+						fmt.Println("2. Configure with: translate config set --url <server-url>")
+						fmt.Println("3. If needed, add: --token <your-token>")
+					}
+					
+					return nil
+				},
+			},
+			{
+				Name:  "doctor",
+				Usage: "Diagnose configuration and connection issues",
+				Action: func(c *cli.Context) error {
+					fmt.Println("🔍 DeepLX CLI Diagnostic")
+					fmt.Println("=======================")
+					fmt.Println()
+					
+					// Check configuration
+					config := loadConfig()
+					fmt.Println("Configuration:")
+					if config.DefaultURL != "" {
+						fmt.Printf("  ✓ Default URL: %s\n", config.DefaultURL)
+					} else {
+						fmt.Printf("  ✗ Default URL: not set (using http://localhost:1188)\n")
+					}
+					
+					if config.DefaultToken != "" {
+						fmt.Printf("  ✓ Default Token: configured\n")
+					} else {
+						fmt.Printf("  ℹ Default Token: not set\n")
+					}
+					
+					// Check environment variables
+					fmt.Println("\nEnvironment:")
+					if token := os.Getenv("TOKEN"); token != "" {
+						fmt.Printf("  ✓ TOKEN: set\n")
+					} else if token := os.Getenv("DEEPLX_TOKEN"); token != "" {
+						fmt.Printf("  ✓ DEEPLX_TOKEN: set\n")
+					} else {
+						fmt.Printf("  ℹ No token in environment\n")
+					}
+					
+					if url := os.Getenv("DEEPLX_URL"); url != "" {
+						fmt.Printf("  ✓ DEEPLX_URL: %s\n", url)
+					}
+					
+					// Test connection
+					serverURL := c.String("url")
+					if serverURL == "" {
+						serverURL = config.DefaultURL
+						if serverURL == "" {
+							serverURL = "http://localhost:1188"
+						}
+					}
+					
+					fmt.Printf("\nTesting connection to %s:\n", serverURL)
+					
+					// Check if reachable
+					fmt.Print("  Checking connectivity... ")
+					if err := checkServerConnection(serverURL, 5*time.Second); err != nil {
+						fmt.Println("✗ Failed")
+						fmt.Printf("  Error: %v\n", err)
+						return nil
+					}
+					fmt.Println("✓ OK")
+					
+					// Try a test translation
+					token := c.String("token")
+					if token == "" {
+						token = config.DefaultToken
+					}
+					
+					fmt.Print("  Testing translation... ")
+					result, err := translate(serverURL, "Hello", "AUTO", "EN", token, 5*time.Second, false)
+					if err != nil {
+						fmt.Println("✗ Failed")
+						fmt.Printf("  Error: %v\n", err)
+						
+						if strings.Contains(err.Error(), "authentication") {
+							fmt.Println("\n💡 Tip: This server requires authentication.")
+							fmt.Println("   Set a token with: translate config set --token <your-token>")
+						}
+					} else {
+						fmt.Printf("✓ OK (got: %s)\n", result.Data)
+						fmt.Printf("  Method: %s\n", result.Method)
+						fmt.Printf("  Source: %s\n", result.SourceLang)
+					}
+					
+					return nil
+				},
+			},	
+			
 		},
+		// Replace the Action function in main() with this enhanced version
 		Action: func(c *cli.Context) error {
 			if c.NArg() == 0 {
+				// Check if this might be a first run
+				config := loadConfig()
+				if config.DefaultURL == "" && config.DefaultToken == "" {
+					// No configuration found, suggest setup
+					fmt.Println("👋 Welcome to DeepLX CLI!")
+					fmt.Println("\nIt looks like this is your first time using the tool.")
+					fmt.Println("Let's get you set up:")
+					fmt.Println("\n  translate setup")
+					fmt.Println("\nOr see all available commands:")
+					fmt.Println("\n  translate --help")
+					return nil
+				}
 				return cli.ShowAppHelp(c)
 			}
 
@@ -160,6 +391,12 @@ func main() {
 
 			result, err := translate(serverURL, text, sourceLang, targetLang, token, timeout, debug)
 			if err != nil {
+				// Check if it's a connection error and provide helpful guidance
+				if strings.Contains(err.Error(), "cannot connect to DeepLX server") {
+					fmt.Fprintln(os.Stderr, err)
+					fmt.Fprintln(os.Stderr, "\n💡 First time? Run: translate setup")
+					return cli.Exit("", 1)
+				}
 				return cli.Exit(fmt.Sprintf("Translation error: %s", err), 1)
 			}
 
@@ -193,6 +430,11 @@ func main() {
 
 // translate sends a translation request to the DeepLX server
 func translate(serverURL, text, sourceLang, targetLang, token string, timeout time.Duration, debug bool) (*TranslationResponse, error) {
+	// First, check if the server is reachable
+	if err := checkServerConnection(serverURL, timeout); err != nil {
+		return nil, err
+	}
+
 	// Create request body
 	reqBody := TranslationRequest{
 		Text:       text,
@@ -238,6 +480,23 @@ func translate(serverURL, text, sourceLang, targetLang, token string, timeout ti
 	// Send request
 	resp, err := client.Do(req)
 	if err != nil {
+		// Check if it's a connection error
+		if strings.Contains(err.Error(), "connection refused") || strings.Contains(err.Error(), "dial tcp") {
+			return nil, fmt.Errorf(`cannot connect to DeepLX server at %s
+
+It looks like DeepLX is not running. To fix this:
+
+1. Start DeepLX with Docker:
+   docker run -d -p 1188:1188 ghcr.io/owo-network/deeplx:latest
+
+2. Or use a different server:
+   translate --url https://your-server.com "Hello world"
+
+3. Or configure a default server:
+   translate config set --url https://your-server.com
+
+For more info: https://github.com/OwO-Network/DeepLX`, serverURL)
+		}
 		return nil, fmt.Errorf("failed to send request: %v", err)
 	}
 	defer resp.Body.Close()
@@ -281,6 +540,32 @@ func translate(serverURL, text, sourceLang, targetLang, token string, timeout ti
 	return &result, nil
 }
 
+// checkServerConnection checks if the DeepLX server is reachable
+func checkServerConnection(serverURL string, timeout time.Duration) error {
+	client := &http.Client{
+		Timeout: timeout,
+	}
+	
+	// Try to reach the root endpoint
+	resp, err := client.Get(serverURL)
+	if err != nil {
+		if strings.Contains(err.Error(), "connection refused") || strings.Contains(err.Error(), "dial tcp") {
+			return fmt.Errorf(`cannot connect to DeepLX server at %s
+
+No DeepLX server found. To start one:
+
+  docker run -d -p 1188:1188 ghcr.io/owo-network/deeplx:latest
+
+Or specify a different server:
+
+  translate --url https://your-server.com "Hello world"`, serverURL)
+		}
+		return fmt.Errorf("server not reachable at %s: %v", serverURL, err)
+	}
+	defer resp.Body.Close()
+	
+	return nil
+}
 // loadConfig loads configuration from ~/.config/translate/config.json
 func loadConfig() Config {
 	var config Config
